@@ -147,6 +147,11 @@ func (s *Server) Shutdown() {
 	// 关闭所有客户端
 	s.clientMgr.CloseAll()
 
+	// 清理所有 sshlink SSH 配置
+	if err := s.clientMgr.configMgr.RemoveAll(); err != nil {
+		common.Error("cleanup SSH config error: %v", err)
+	}
+
 	// 等待所有 goroutine 退出
 	s.wg.Wait()
 

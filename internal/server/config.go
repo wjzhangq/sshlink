@@ -112,6 +112,23 @@ func (cm *ConfigManager) AddHost(config HostConfig) error {
 	return nil
 }
 
+// RemoveAll 移除所有 sshlink Host 配置
+func (cm *ConfigManager) RemoveAll() error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	_, otherLines, err := cm.readConfig()
+	if err != nil {
+		return err
+	}
+
+	if err := cm.writeConfig(nil, otherLines); err != nil {
+		return err
+	}
+	common.Info("SSH config: all sshlink hosts removed")
+	return nil
+}
+
 // RemoveHost 移除Host配置
 func (cm *ConfigManager) RemoveHost(host string) error {
 	cm.mu.Lock()
