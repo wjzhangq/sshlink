@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ type HealthServer struct {
 	port      int
 	clientMgr *ClientManager
 	metrics   *ServerMetrics
+	srv       *http.Server
 }
 
 // NewHealthServer 创建健康检查服务
@@ -31,14 +33,21 @@ func (h *HealthServer) Start() {
 	mux.HandleFunc("/metrics", h.handleMetrics)
 
 	addr := fmt.Sprintf(":%d", h.port)
-	srv := &http.Server{Addr: addr, Handler: mux}
+	h.srv = &http.Server{Addr: addr, Handler: mux}
 
 	common.SafeGoWithName("health-server", func() {
 		common.Info("health check server listening on %s", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := h.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			common.Error("health server error: %v", err)
 		}
 	})
+}
+
+// Shutdown 优雅关闭健康检查服务
+func (h *HealthServer) Shutdown(ctx context.Context) {
+	if h.srv != nil {
+		h.srv.Shutdown(ctx)
+	}
 }
 
 func (h *HealthServer) handleHealth(w http.ResponseWriter, r *http.Request) {

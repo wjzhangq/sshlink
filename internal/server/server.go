@@ -31,6 +31,7 @@ type Server struct {
 	clientMgr *ClientManager
 	upgrader  websocket.Upgrader
 	metrics   *ServerMetrics
+	healthSrv *HealthServer
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -78,7 +79,11 @@ func NewServer(cfg Config) (*Server, error) {
 		},
 	}
 
-	s.clientMgr = NewClientManager(cfg.BasePort, cfg.MaxClients, cfg.MaxChannels, publicKey)
+	clientMgr, err := NewClientManager(cfg.BasePort, cfg.MaxClients, cfg.MaxChannels, publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("create client manager error: %w", err)
+	}
+	s.clientMgr = clientMgr
 
 	return s, nil
 }
@@ -92,8 +97,8 @@ func (s *Server) Start() error {
 
 	// 启动健康检查服务
 	if s.healthPort > 0 {
-		healthSrv := NewHealthServer(s.healthPort, s.clientMgr, s.metrics)
-		healthSrv.Start()
+		s.healthSrv = NewHealthServer(s.healthPort, s.clientMgr, s.metrics)
+		s.healthSrv.Start()
 	}
 
 	// 启动定期指标输出（每60秒）
@@ -132,6 +137,11 @@ func (s *Server) Shutdown() {
 	close(s.shutdown)
 	s.cancel()
 
+	// 关闭健康检查服务
+	if s.healthSrv != nil {
+		s.healthSrv.Shutdown(context.Background())
+	}
+
 	// 关闭所有客户端
 	s.clientMgr.CloseAll()
 
@@ -154,17 +164,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	clientIP := getClientIP(r)
 	common.Info("new connection from %s", clientIP)
 
+	// 注册阶段整体超时 30 秒
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
 	// 处理客户端注册
-	if err := s.handleClientRegister(conn, clientIP); err != nil {
+	if err := s.handleClientRegister(ctx, conn, clientIP); err != nil {
 		common.Error("handle client register error: %v", err)
 		conn.Close()
 	}
 }
 
 // handleClientRegister 处理客户端注册
-func (s *Server) handleClientRegister(conn *websocket.Conn, clientIP string) error {
-	// 设置读取超时
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+func (s *Server) handleClientRegister(ctx context.Context, conn *websocket.Conn, clientIP string) error {
+	// 读取超时与 context 保持一致
+	deadline, _ := ctx.Deadline()
+	conn.SetReadDeadline(deadline)
 
 	// 读取注册消息
 	_, data, err := conn.ReadMessage()
@@ -217,7 +232,7 @@ func (s *Server) handleClientRegister(conn *websocket.Conn, clientIP string) err
 	}
 
 	// 创建客户端
-	client := NewClient(clientID, info, conn, listener, s.maxChannels)
+	client := NewClient(clientID, info, conn, listener, s.maxChannels, s.metrics)
 
 	// 添加到管理器
 	if err := s.clientMgr.AddClient(client); err != nil {

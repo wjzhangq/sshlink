@@ -47,42 +47,49 @@ type Client struct {
 	listener   net.Listener
 	lastHB     atomic.Int64 // 最后心跳时间（Unix时间戳）
 	writeMu    sync.Mutex   // WebSocket写锁
+	metrics    *ServerMetrics
 }
 
 // ClientManager 客户端管理器
 type ClientManager struct {
-	mu             sync.RWMutex
-	clients        map[string]*Client
-	allocatedPorts map[int]bool
-	basePort       int
-	maxClients     int
-	maxChannels    int
-	publicKey      string
-	configMgr      *ConfigManager
+	mu                sync.RWMutex
+	clients           map[string]*Client
+	allocatedPorts    map[int]bool
+	basePort          int
+	nextAvailablePort int // 端口分配游标，避免每次从头扫描
+	maxClients        int
+	maxChannels       int
+	publicKey         string
+	configMgr         *ConfigManager
 }
 
 // NewClientManager 创建客户端管理器
-func NewClientManager(basePort, maxClients, maxChannels int, publicKey string) *ClientManager {
-	return &ClientManager{
-		clients:        make(map[string]*Client),
-		allocatedPorts: make(map[int]bool),
-		basePort:       basePort,
-		maxClients:     maxClients,
-		maxChannels:    maxChannels,
-		publicKey:      publicKey,
-		configMgr:      NewConfigManager(),
+func NewClientManager(basePort, maxClients, maxChannels int, publicKey string) (*ClientManager, error) {
+	configMgr, err := NewConfigManager()
+	if err != nil {
+		return nil, fmt.Errorf("create config manager error: %w", err)
 	}
+	return &ClientManager{
+		clients:           make(map[string]*Client),
+		allocatedPorts:    make(map[int]bool),
+		basePort:          basePort,
+		nextAvailablePort: basePort,
+		maxClients:        maxClients,
+		maxChannels:       maxChannels,
+		publicKey:         publicKey,
+		configMgr:         configMgr,
+	}, nil
 }
 
-// AllocatePort 分配可用端口
+// AllocatePort 分配可用端口（使用游标避免每次从头扫描）
 func (cm *ClientManager) AllocatePort() (int, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	// 从 basePort 开始查找第一个未分配的端口
-	for port := cm.basePort; port < 65535; port++ {
+	for port := cm.nextAvailablePort; port < 65535; port++ {
 		if !cm.allocatedPorts[port] {
 			cm.allocatedPorts[port] = true
+			cm.nextAvailablePort = port + 1
 			return port, nil
 		}
 	}
@@ -172,7 +179,7 @@ func (cm *ClientManager) CloseAll() {
 }
 
 // NewClient 创建新客户端
-func NewClient(id string, info ClientInfo, conn *websocket.Conn, listener net.Listener, maxChannels int) *Client {
+func NewClient(id string, info ClientInfo, conn *websocket.Conn, listener net.Listener, maxChannels int, metrics *ServerMetrics) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &Client{
@@ -183,6 +190,7 @@ func NewClient(id string, info ClientInfo, conn *websocket.Conn, listener net.Li
 		cancel:   cancel,
 		channels: make(map[uint16]*Channel),
 		listener: listener,
+		metrics:  metrics,
 	}
 
 	client.lastHB.Store(time.Now().Unix())
@@ -192,6 +200,7 @@ func NewClient(id string, info ClientInfo, conn *websocket.Conn, listener net.Li
 
 // Start 启动客户端处理
 func (c *Client) Start() {
+	c.wg.Add(3)
 	common.SafeGoWithName(fmt.Sprintf("client-%s-read", c.id), c.readLoop)
 	common.SafeGoWithName(fmt.Sprintf("client-%s-heartbeat", c.id), c.heartbeatLoop)
 	common.SafeGoWithName(fmt.Sprintf("client-%s-accept", c.id), c.acceptLoop)
@@ -243,7 +252,6 @@ func (c *Client) SendFrame(channelID, signal uint16, data []byte) error {
 
 // readLoop 读取消息循环
 func (c *Client) readLoop() {
-	c.wg.Add(1)
 	defer c.wg.Done()
 
 	for {
@@ -327,7 +335,6 @@ func (c *Client) closeChannel(channelID uint16) {
 
 // heartbeatLoop 心跳循环
 func (c *Client) heartbeatLoop() {
-	c.wg.Add(1)
 	defer c.wg.Done()
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -356,7 +363,6 @@ func (c *Client) heartbeatLoop() {
 
 // acceptLoop 接受TCP连接循环
 func (c *Client) acceptLoop() {
-	c.wg.Add(1)
 	defer c.wg.Done()
 
 	for {

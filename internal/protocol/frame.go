@@ -15,11 +15,15 @@ import (
 const (
 	// HeaderSize 帧头部大小（4字节）
 	HeaderSize = 4
+	// MaxFrameSize 最大帧大小（10MB），防止恶意客户端耗尽内存
+	MaxFrameSize = 10 * 1024 * 1024
 )
 
 var (
 	// ErrFrameTooShort 帧数据太短
 	ErrFrameTooShort = errors.New("frame too short")
+	// ErrFrameTooLarge 帧数据太大
+	ErrFrameTooLarge = errors.New("frame too large")
 )
 
 // EncodeFrame 编码帧数据
@@ -48,6 +52,10 @@ func EncodeFrame(channelID, signal uint16, data []byte) []byte {
 func DecodeFrame(frame []byte) (uint16, uint16, []byte, error) {
 	if len(frame) < HeaderSize {
 		return 0, 0, nil, ErrFrameTooShort
+	}
+
+	if len(frame) > MaxFrameSize {
+		return 0, 0, nil, ErrFrameTooLarge
 	}
 
 	// 读取头部（大端序）

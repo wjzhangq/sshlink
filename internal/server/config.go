@@ -29,18 +29,17 @@ type HostConfig struct {
 }
 
 // NewConfigManager 创建配置管理器
-func NewConfigManager() *ConfigManager {
+func NewConfigManager() (*ConfigManager, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		common.Error("get home dir error: %v", err)
-		return nil
+		return nil, fmt.Errorf("get home dir error: %w", err)
 	}
 
 	configPath := filepath.Join(homeDir, ".ssh", "config")
 
 	return &ConfigManager{
 		configPath: configPath,
-	}
+	}, nil
 }
 
 // Backup 备份配置文件
@@ -96,13 +95,21 @@ func (cm *ConfigManager) AddHost(config HostConfig) error {
 		if h.Host == config.Host {
 			// 更新现有配置
 			hosts[i] = config
-			return cm.writeConfig(hosts, otherLines)
+			if err := cm.writeConfig(hosts, otherLines); err != nil {
+				return err
+			}
+			common.Info("SSH config updated: host %s", config.Host)
+			return nil
 		}
 	}
 
 	// 添加新配置
 	hosts = append(hosts, config)
-	return cm.writeConfig(hosts, otherLines)
+	if err := cm.writeConfig(hosts, otherLines); err != nil {
+		return err
+	}
+	common.Info("SSH config added: host %s", config.Host)
+	return nil
 }
 
 // RemoveHost 移除Host配置
@@ -124,7 +131,11 @@ func (cm *ConfigManager) RemoveHost(host string) error {
 		}
 	}
 
-	return cm.writeConfig(newHosts, otherLines)
+	if err := cm.writeConfig(newHosts, otherLines); err != nil {
+		return err
+	}
+	common.Info("SSH config removed: host %s", host)
+	return nil
 }
 
 // readConfig 读取配置文件

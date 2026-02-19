@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -37,7 +38,8 @@ func NewChannel(id uint16, tcpConn net.Conn, client *Client) *Channel {
 
 // Start 启动通道
 func (ch *Channel) Start() {
-	common.SafeGoWithName("channel-tcp-to-ws", ch.tcpToWs)
+	ch.wg.Add(1)
+	common.SafeGoWithName(fmt.Sprintf("channel-%d-tcp-to-ws", ch.id), ch.tcpToWs)
 }
 
 // Close 关闭通道
@@ -53,7 +55,6 @@ func (ch *Channel) Close() {
 
 // tcpToWs TCP -> WebSocket
 func (ch *Channel) tcpToWs() {
-	ch.wg.Add(1)
 	defer ch.wg.Done()
 	defer ch.client.closeChannel(ch.id)
 
@@ -82,7 +83,9 @@ func (ch *Channel) tcpToWs() {
 					common.Error("channel %d send data error: %v", ch.id, err)
 					return
 				}
-
+				if ch.client.metrics != nil {
+					ch.client.metrics.AddBytesSent(uint64(n))
+				}
 				common.Debug("channel %d sent %d bytes to client", ch.id, n)
 			}
 		}
@@ -102,6 +105,8 @@ func (ch *Channel) WriteToTCP(data []byte) {
 		ch.Close()
 		return
 	}
-
+	if ch.client.metrics != nil {
+		ch.client.metrics.AddBytesReceived(uint64(n))
+	}
 	common.Debug("channel %d wrote %d bytes to tcp", ch.id, n)
 }

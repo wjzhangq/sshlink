@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,7 +26,11 @@ type LocalChannel struct {
 
 // newLocalChannel 创建本地通道并连接本地 SSH
 func newLocalChannel(id uint16, sshPort string, client *Client) (*LocalChannel, error) {
-	addr := fmt.Sprintf("127.0.0.1:%s", sshPort)
+	port, err := strconv.Atoi(sshPort)
+	if err != nil || port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid SSH port: %s", sshPort)
+	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("connect to local SSH %s error: %w", addr, err)
