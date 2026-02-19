@@ -310,7 +310,7 @@ func (c *Client) closeAllChannels() {
 
 // heartbeatLoop sends periodic heartbeats and closes the connection on timeout.
 func (c *Client) heartbeatLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -327,7 +327,7 @@ func (c *Client) heartbeatLoop() {
 				return
 			}
 
-			if time.Now().Unix()-c.lastHB.Load() > 90 {
+			if time.Now().Unix()-c.lastHB.Load() > 180 {
 				common.Error("heartbeat timeout")
 				c.connMu.Lock()
 				if c.conn != nil {

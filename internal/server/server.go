@@ -20,19 +20,17 @@ import (
 
 // Server 服务端
 type Server struct {
-	listenAddr      string
-	listenPort      int
-	basePort        int
-	publicKey       string
-	privateKeyPath  string
-	maxClients      int
-	maxChannels     int
-	healthPort      int
+	listenAddr     string
+	listenPort     int
+	basePort       int
+	publicKey      string
+	privateKeyPath string
+	maxClients     int
+	maxChannels    int
 
 	clientMgr *ClientManager
 	upgrader  websocket.Upgrader
 	metrics   *ServerMetrics
-	healthSrv *HealthServer
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -48,7 +46,6 @@ type Config struct {
 	PublicKeyPath string
 	MaxClients    int
 	MaxChannels   int
-	HealthPort    int
 }
 
 // NewServer 创建服务端
@@ -69,7 +66,6 @@ func NewServer(cfg Config) (*Server, error) {
 		privateKeyPath: privateKeyPath,
 		maxClients:     cfg.MaxClients,
 		maxChannels:    cfg.MaxChannels,
-		healthPort:     cfg.HealthPort,
 		ctx:         ctx,
 		cancel:      cancel,
 		shutdown:    make(chan struct{}),
@@ -92,26 +88,19 @@ func NewServer(cfg Config) (*Server, error) {
 
 // Start 启动服务端
 func (s *Server) Start() error {
-	// 备份 SSH 配置
-	if err := s.clientMgr.configMgr.Backup(); err != nil {
-		return fmt.Errorf("backup SSH config error: %w", err)
-	}
-
-	// 启动健康检查服务
-	if s.healthPort > 0 {
-		s.healthSrv = NewHealthServer(s.healthPort, s.clientMgr, s.metrics)
-		s.healthSrv.Start()
-	}
-
 	// 启动定期指标输出（每60秒）
 	s.metrics.StartReporter(60*time.Second, s.shutdown)
 
 	// 启动 HTTP 服务
 	addr := fmt.Sprintf("%s:%d", s.listenAddr, s.listenPort)
-	http.HandleFunc("/sshlink/ws", s.handleWebSocket)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/sshlink/ws", s.handleWebSocket)
+	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/metrics", s.handleMetrics)
 
 	server := &http.Server{
-		Addr: addr,
+		Addr:    addr,
+		Handler: mux,
 	}
 
 	// 监听系统信号
@@ -138,11 +127,6 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown() {
 	close(s.shutdown)
 	s.cancel()
-
-	// 关闭健康检查服务
-	if s.healthSrv != nil {
-		s.healthSrv.Shutdown(context.Background())
-	}
 
 	// 关闭所有客户端
 	s.clientMgr.CloseAll()

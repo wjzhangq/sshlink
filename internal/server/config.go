@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/wjzhangq/sshlink/internal/common"
 )
@@ -37,46 +36,22 @@ func NewConfigManager() (*ConfigManager, error) {
 
 	configPath := filepath.Join(homeDir, ".ssh", "config")
 
+	// 确保 .ssh 目录和 config 文件存在
+	sshDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return nil, fmt.Errorf("create .ssh dir error: %w", err)
+	}
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		f, err := os.Create(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("create config file error: %w", err)
+		}
+		f.Close()
+	}
+
 	return &ConfigManager{
 		configPath: configPath,
 	}, nil
-}
-
-// Backup 备份配置文件
-func (cm *ConfigManager) Backup() error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	// 检查配置文件是否存在
-	if _, err := os.Stat(cm.configPath); os.IsNotExist(err) {
-		// 配置文件不存在，创建空文件
-		sshDir := filepath.Dir(cm.configPath)
-		if err := os.MkdirAll(sshDir, 0700); err != nil {
-			return fmt.Errorf("create .ssh dir error: %w", err)
-		}
-
-		f, err := os.Create(cm.configPath)
-		if err != nil {
-			return fmt.Errorf("create config file error: %w", err)
-		}
-		f.Close()
-
-		return nil
-	}
-
-	// 备份现有配置
-	backupPath := fmt.Sprintf("%s.bak.%s", cm.configPath, time.Now().Format("20060102150405"))
-	data, err := os.ReadFile(cm.configPath)
-	if err != nil {
-		return fmt.Errorf("read config error: %w", err)
-	}
-
-	if err := os.WriteFile(backupPath, data, 0600); err != nil {
-		return fmt.Errorf("write backup error: %w", err)
-	}
-
-	common.Info("backed up SSH config to %s", backupPath)
-	return nil
 }
 
 // AddHost 添加Host配置

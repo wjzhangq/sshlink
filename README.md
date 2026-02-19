@@ -58,15 +58,14 @@ ssh sshlink1
 |------|--------|------|
 | `-h` | `0.0.0.0` | 监听地址 |
 | `-p` | `8080` | WebSocket 监听端口 |
-| `-b` | `1001` | SSH 代理起始端口 |
+| `-b` | `10000` | SSH 代理起始端口 |
 | `-i` | `~/.ssh/id_rsa.pub` | 公钥路径（用于免密登录） |
 | `--max-clients` | `1000` | 最大同时连接客户端数 |
 | `--max-channels` | `10` | 每个客户端最大并发 SSH 会话数 |
-| `--health-port` | `8081` | 健康检查 HTTP 端口（0 表示禁用） |
 | `-v` | `false` | 开启详细日志 |
 
 ```bash
-./links -p 8080 -h 0.0.0.0 -i ~/.ssh/id_rsa.pub -b 1001 --max-clients 500 -v
+./links -p 8080 -h 0.0.0.0 -i ~/.ssh/id_rsa.pub -b 10000 --max-clients 500 -v
 ```
 
 ### linkc（客户端）
@@ -99,7 +98,6 @@ Host sshlink1  # user=alice, hostname=my-laptop, ip=203.0.113.1, remote_port=100
 ```
 
 - 仅操作 `sshlink` 前缀的 Host，不影响其他配置
-- 启动时自动备份原配置到 `~/.ssh/config.bak.时间戳`
 - 客户端断开时自动清理对应配置
 
 ## 免密登录
@@ -108,14 +106,14 @@ Host sshlink1  # user=alice, hostname=my-laptop, ip=203.0.113.1, remote_port=100
 
 ## 健康检查
 
-服务端默认在 `8081` 端口提供 HTTP 接口：
+服务端在 `-p` 端口提供 HTTP 接口：
 
 ```bash
 # 健康状态
-curl http://your-server:8081/health
+curl http://your-server:8080/health
 
 # 监控指标
-curl http://your-server:8081/metrics
+curl http://your-server:8080/metrics
 ```
 
 响应示例：
@@ -134,7 +132,7 @@ curl http://your-server:8081/metrics
 - **多路复用**：单个 WebSocket 连接承载多个 SSH 会话，通过 Channel ID 区分
 - **协议**：自定义二进制帧（4 字节头部：Channel ID + 控制信号）
 - **重连**：指数退避，默认 1s → 2s → 4s → ... → 60s
-- **心跳**：每 30 秒发送，90 秒无响应视为断开
+- **心跳**：每 60 秒发送，180 秒无响应视为断开
 - **并发安全**：全局 mutex/RWMutex 保护，context 控制 goroutine 生命周期
 
 ## 平台支持

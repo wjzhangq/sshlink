@@ -284,9 +284,6 @@ func (c *Client) handleMessage(data []byte) {
 		return
 	}
 
-	common.Debug("client %s received signal=%d channelID=%d dataLen=%d",
-		c.id, signal, channelID, len(payload))
-
 	switch signal {
 	case protocol.SIG_HEARTBEAT:
 		c.lastHB.Store(time.Now().Unix())
@@ -337,7 +334,7 @@ func (c *Client) closeChannel(channelID uint16) {
 func (c *Client) heartbeatLoop() {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -353,7 +350,7 @@ func (c *Client) heartbeatLoop() {
 
 			// 检查心跳超时
 			lastHB := c.lastHB.Load()
-			if time.Now().Unix()-lastHB > 90 {
+			if time.Now().Unix()-lastHB > 180 {
 				common.Error("client %s heartbeat timeout", c.id)
 				return
 			}

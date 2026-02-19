@@ -13,11 +13,10 @@ func main() {
 	// 命令行参数
 	listenAddr := flag.String("h", "0.0.0.0", "监听地址")
 	listenPort := flag.Int("p", 8080, "WebSocket 端口")
-	basePort := flag.Int("b", 1001, "起始端口")
+	basePort := flag.Int("b", 10000, "起始端口")
 	publicKeyPath := flag.String("i", "~/.ssh/id_rsa.pub", "公钥路径")
 	maxClients := flag.Int("max-clients", 1000, "最大客户端数")
 	maxChannels := flag.Int("max-channels", 10, "每客户端最大通道数")
-	healthPort := flag.Int("health-port", 8081, "健康检查端口（0=禁用）")
 	verbose := flag.Bool("v", false, "详细日志")
 
 	flag.Parse()
@@ -33,7 +32,6 @@ func main() {
 		PublicKeyPath: *publicKeyPath,
 		MaxClients:    *maxClients,
 		MaxChannels:   *maxChannels,
-		HealthPort:    *healthPort,
 	}
 
 	// 创建服务端
