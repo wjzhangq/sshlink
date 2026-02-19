@@ -1,0 +1,67 @@
+name: Build linkc
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        type: string
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run go mod tidy
+        run: go mod tidy
+
+      - name: Build windows x64
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o linkc_windows_x64_${{ steps.get_version.outputs.VERSION }}.exe ./cmd/linkc
+
+      - name: Build windows arm64
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "-s -w" -o linkc_windows_arm64_${{ steps.get_version.outputs.VERSION }}.exe ./cmd/linkc
+
+      - name: Build linux x64
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o linkc_linux_x64_${{ steps.get_version.outputs.VERSION }} ./cmd/linkc
+
+      - name: Build linux arm64
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o linkc_linux_arm64_${{ steps.get_version.outputs.VERSION }} ./cmd/linkc
+
+      - name: Build darwin x64
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o linkc_darwin_x64_${{ steps.get_version.outputs.VERSION }} ./cmd/linkc
+
+      - name: Build darwin arm64
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o linkc_darwin_arm64_${{ steps.get_version.outputs.VERSION }} ./cmd/linkc
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          files: |
+            linkc_windows_x64_${{ steps.get_version.outputs.VERSION }}.exe
+            linkc_windows_arm64_${{ steps.get_version.outputs.VERSION }}.exe
+            linkc_linux_x64_${{ steps.get_version.outputs.VERSION }}
+            linkc_linux_arm64_${{ steps.get_version.outputs.VERSION }}
+            linkc_darwin_x64_${{ steps.get_version.outputs.VERSION }}
+            linkc_darwin_arm64_${{ steps.get_version.outputs.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
