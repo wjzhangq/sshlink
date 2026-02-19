@@ -13,7 +13,7 @@ import (
 	"github.com/wjzhangq/sshlink/internal/protocol"
 )
 
-// LocalChannel 客户端本地通道（连接到本地 SSH 服务）
+// LocalChannel represents a client-side channel connected to the local SSH service.
 type LocalChannel struct {
 	id      uint16
 	conn    net.Conn
@@ -24,7 +24,7 @@ type LocalChannel struct {
 	writeMu sync.Mutex
 }
 
-// newLocalChannel 创建本地通道并连接本地 SSH
+// newLocalChannel dials the local SSH port and returns a ready LocalChannel.
 func newLocalChannel(id uint16, sshPort string, client *Client) (*LocalChannel, error) {
 	port, err := strconv.Atoi(sshPort)
 	if err != nil || port < 1 || port > 65535 {
@@ -46,12 +46,12 @@ func newLocalChannel(id uint16, sshPort string, client *Client) (*LocalChannel, 
 	}, nil
 }
 
-// Start 启动通道双向转发
+// Start launches the bidirectional forwarding goroutine.
 func (ch *LocalChannel) Start() {
 	common.SafeGoWithName(fmt.Sprintf("lchan-%d-local-to-ws", ch.id), ch.localToWs)
 }
 
-// Close 关闭通道
+// Close cancels the channel context and closes the underlying TCP connection.
 func (ch *LocalChannel) Close() {
 	ch.cancel()
 	if ch.conn != nil {
@@ -60,7 +60,7 @@ func (ch *LocalChannel) Close() {
 	ch.wg.Wait()
 }
 
-// WriteToLocal 将 WebSocket 数据写入本地 SSH 连接
+// WriteToLocal writes WebSocket data into the local SSH connection.
 func (ch *LocalChannel) WriteToLocal(data []byte) {
 	ch.writeMu.Lock()
 	defer ch.writeMu.Unlock()
@@ -72,7 +72,7 @@ func (ch *LocalChannel) WriteToLocal(data []byte) {
 	}
 }
 
-// localToWs 本地 SSH -> WebSocket
+// localToWs forwards data from the local SSH connection to the WebSocket server.
 func (ch *LocalChannel) localToWs() {
 	ch.wg.Add(1)
 	defer ch.wg.Done()
@@ -92,7 +92,7 @@ func (ch *LocalChannel) localToWs() {
 				if err != io.EOF {
 					common.Debug("channel %d local SSH read error: %v", ch.id, err)
 				}
-				// 通知服务端关闭通道
+				// notify server to close channel
 				ch.client.sendFrame(ch.id, protocol.SIG_CHANNEL_CLOSE, nil)
 				return
 			}

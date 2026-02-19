@@ -13,12 +13,12 @@ import (
 )
 
 func main() {
-	hostname := flag.String("h", "", "自定义主机名（默认使用系统主机名）")
-	sshPort := flag.String("ssh-port", "22", "本地 SSH 端口")
-	maxRetries := flag.Int("max-retries", 0, "最大重试次数（0=无限）")
-	initialDelay := flag.Duration("initial-delay", 1*time.Second, "初始重连延迟")
-	maxDelay := flag.Duration("max-delay", 60*time.Second, "最大重连延迟")
-	verbose := flag.Bool("v", false, "详细日志")
+	hostname := flag.String("h", "", "custom hostname (default: system hostname)")
+	sshPort := flag.String("ssh-port", "22", "local SSH port")
+	maxRetries := flag.Int("max-retries", 0, "max reconnect attempts (0=unlimited)")
+	initialDelay := flag.Duration("initial-delay", 1*time.Second, "initial reconnect delay")
+	maxDelay := flag.Duration("max-delay", 60*time.Second, "max reconnect delay")
+	verbose := flag.Bool("v", false, "verbose logging")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: linkc [options] <server-url>\n\n")
@@ -38,7 +38,7 @@ func main() {
 	serverURL := flag.Arg(0) + "/sshlink/ws"
 	common.SetVerbose(*verbose)
 
-	// 检查 SSH 服务
+	// check SSH service
 	running, hint := client.CheckSSHService()
 	if !running {
 		fmt.Fprintf(os.Stderr, "WARNING: SSH service not running.\n%s\n\n", hint)
@@ -64,7 +64,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 等待信号
+	// wait for signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan

@@ -5,26 +5,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/wjzhangq/sshlink/internal/common"
 )
 
-// AddAuthorizedKey 将公钥添加到 authorized_keys（如果不存在）
+// AddAuthorizedKey appends pubKey to authorized_keys if not already present.
 func AddAuthorizedKey(pubKey string) error {
 	authKeysPath, err := authorizedKeysPath()
 	if err != nil {
 		return err
 	}
 
-	// 确保 .ssh 目录存在
+	// ensure .ssh directory exists
 	sshDir := filepath.Dir(authKeysPath)
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
 		return fmt.Errorf("create .ssh dir error: %w", err)
 	}
 
-	// 检查公钥是否已存在
+	// check if key already exists
 	exists, err := keyExists(authKeysPath, pubKey)
 	if err != nil {
 		return err
@@ -34,7 +33,7 @@ func AddAuthorizedKey(pubKey string) error {
 		return nil
 	}
 
-	// 追加公钥
+	// append key
 	f, err := os.OpenFile(authKeysPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("open authorized_keys error: %w", err)
@@ -46,7 +45,7 @@ func AddAuthorizedKey(pubKey string) error {
 		return fmt.Errorf("write authorized_keys error: %w", err)
 	}
 
-	// 修复权限
+	// fix permissions
 	if err := fixPermissions(authKeysPath); err != nil {
 		common.Error("fix authorized_keys permissions error: %v", err)
 	}
@@ -73,7 +72,7 @@ func keyExists(path, pubKey string) (bool, error) {
 	}
 	defer f.Close()
 
-	// 提取公钥的关键部分（类型 + 内容，忽略注释）
+	// match on key type + content, ignoring comment field
 	keyParts := strings.Fields(pubKey)
 	if len(keyParts) < 2 {
 		return false, nil
@@ -88,12 +87,4 @@ func keyExists(path, pubKey string) (bool, error) {
 		}
 	}
 	return false, scanner.Err()
-}
-
-func fixPermissions(path string) error {
-	if runtime.GOOS == "windows" {
-		// Windows 不需要 chmod，确保文件可读即可
-		return nil
-	}
-	return os.Chmod(path, 0600)
 }

@@ -2,15 +2,15 @@ package client
 
 import "time"
 
-// ReconnectConfig 重连配置
+// ReconnectConfig holds reconnection parameters.
 type ReconnectConfig struct {
-	InitialDelay      time.Duration // 初始延迟，默认 1s
-	MaxDelay          time.Duration // 最大延迟，默认 60s
-	MaxRetries        int           // 最大重试次数，0=无限
-	BackoffMultiplier float64       // 退避倍数，默认 2.0
+	InitialDelay      time.Duration // initial delay, default 1s
+	MaxDelay          time.Duration // max delay, default 60s
+	MaxRetries        int           // max retries, 0=unlimited
+	BackoffMultiplier float64       // backoff multiplier, default 2.0
 }
 
-// DefaultReconnectConfig 默认重连配置
+// DefaultReconnectConfig returns the default reconnection configuration.
 func DefaultReconnectConfig() ReconnectConfig {
 	return ReconnectConfig{
 		InitialDelay:      1 * time.Second,

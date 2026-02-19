@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -16,7 +15,7 @@ import (
 	"github.com/wjzhangq/sshlink/internal/protocol"
 )
 
-// Config 客户端配置
+// Config holds client configuration.
 type Config struct {
 	ServerURL    string
 	Hostname     string
@@ -24,10 +23,10 @@ type Config struct {
 	ReconnectCfg ReconnectConfig
 }
 
-// Client 客户端
+// Client manages the WebSocket connection and SSH channel multiplexing.
 type Client struct {
 	cfg      Config
-	clientID string // 服务端分配的 ID
+	clientID string // assigned by server
 
 	conn    *websocket.Conn
 	connMu  sync.Mutex
@@ -45,7 +44,7 @@ type Client struct {
 	lastHB atomic.Int64
 }
 
-// NewClient 创建客户端
+// NewClient creates a new Client.
 func NewClient(cfg Config) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Client{
@@ -56,7 +55,7 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-// Start 启动客户端（首次连接 + 重连监控）
+// Start connects to the server and launches the reconnect monitor.
 func (c *Client) Start() error {
 	if err := c.connect(); err != nil {
 		return err
@@ -66,7 +65,7 @@ func (c *Client) Start() error {
 	return nil
 }
 
-// Stop 停止客户端
+// Stop shuts down the client and waits for all goroutines to exit.
 func (c *Client) Stop() {
 	c.cancel()
 	c.connMu.Lock()
@@ -77,7 +76,7 @@ func (c *Client) Stop() {
 	c.wg.Wait()
 }
 
-// sendFrame 发送帧数据
+// sendFrame encodes and sends a protocol frame over the WebSocket connection.
 func (c *Client) sendFrame(channelID, signal uint16, data []byte) error {
 	frame := protocol.EncodeFrame(channelID, signal, data)
 
@@ -96,7 +95,7 @@ func (c *Client) sendFrame(channelID, signal uint16, data []byte) error {
 	return conn.WriteMessage(websocket.BinaryMessage, frame)
 }
 
-// connect 建立连接并注册
+// connect dials the server and registers the client.
 func (c *Client) connect() error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
@@ -111,7 +110,7 @@ func (c *Client) connect() error {
 	c.conn = conn
 	c.connMu.Unlock()
 
-	// 注册
+	// register
 	if err := c.register(conn); err != nil {
 		conn.Close()
 		c.connMu.Lock()
@@ -123,7 +122,7 @@ func (c *Client) connect() error {
 	c.connected.Store(true)
 	c.lastHB.Store(time.Now().Unix())
 
-	// 启动读循环和心跳
+	// start read loop and heartbeat
 	c.wg.Add(2)
 	common.SafeGoWithName("client-read", func() {
 		defer c.wg.Done()
@@ -137,7 +136,7 @@ func (c *Client) connect() error {
 	return nil
 }
 
-// register 发送注册消息并接收 ACK
+// register sends the registration frame and waits for the server ACK.
 func (c *Client) register(conn *websocket.Conn) error {
 	hostname := c.cfg.Hostname
 	if hostname == "" {
@@ -160,7 +159,7 @@ func (c *Client) register(conn *websocket.Conn) error {
 		return fmt.Errorf("send register error: %w", err)
 	}
 
-	// 接收 ACK
+	// receive ACK
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	_, data, err := conn.ReadMessage()
 	if err != nil {
@@ -175,7 +174,7 @@ func (c *Client) register(conn *websocket.Conn) error {
 		return fmt.Errorf("unexpected signal: %d", signal)
 	}
 
-	// 解析 ACK: clientID\n公钥
+	// parse ACK: clientID\npubKey
 	parts := strings.SplitN(string(payload2), "\n", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid ack data")
@@ -186,7 +185,7 @@ func (c *Client) register(conn *websocket.Conn) error {
 
 	common.Info("registered as %s", c.clientID)
 
-	// 添加公钥到 authorized_keys
+	// add server public key to authorized_keys
 	if err := AddAuthorizedKey(pubKey); err != nil {
 		common.Error("add authorized key error: %v", err)
 	}
@@ -194,7 +193,7 @@ func (c *Client) register(conn *websocket.Conn) error {
 	return nil
 }
 
-// readLoop 读取消息循环
+// readLoop reads messages from the WebSocket connection until disconnected or context cancelled.
 func (c *Client) readLoop(conn *websocket.Conn) {
 	defer func() {
 		c.connected.Store(false)
@@ -225,7 +224,7 @@ func (c *Client) readLoop(conn *websocket.Conn) {
 	}
 }
 
-// handleMessage 处理服务端消息
+// handleMessage dispatches an incoming server frame to the appropriate handler.
 func (c *Client) handleMessage(data []byte) {
 	channelID, signal, payload, err := protocol.DecodeFrame(data)
 	if err != nil {
@@ -257,7 +256,7 @@ func (c *Client) handleMessage(data []byte) {
 	}
 }
 
-// openChannel 打开新通道（连接本地 SSH）
+// openChannel connects to the local SSH service and starts forwarding for channelID.
 func (c *Client) openChannel(channelID uint16) {
 	sshPort := c.cfg.SSHPort
 	if sshPort == "" {
@@ -279,7 +278,7 @@ func (c *Client) openChannel(channelID uint16) {
 	ch.Start()
 }
 
-// closeChannel 关闭通道
+// closeChannel closes and removes the channel identified by channelID.
 func (c *Client) closeChannel(channelID uint16) {
 	c.channelsMu.Lock()
 	ch, ok := c.channels[channelID]
@@ -294,7 +293,7 @@ func (c *Client) closeChannel(channelID uint16) {
 	}
 }
 
-// closeAllChannels 关闭所有通道
+// closeAllChannels closes every open channel and clears the channel map.
 func (c *Client) closeAllChannels() {
 	c.channelsMu.Lock()
 	channels := make([]*LocalChannel, 0, len(c.channels))
@@ -309,7 +308,7 @@ func (c *Client) closeAllChannels() {
 	}
 }
 
-// heartbeatLoop 心跳循环
+// heartbeatLoop sends periodic heartbeats and closes the connection on timeout.
 func (c *Client) heartbeatLoop() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -341,13 +340,13 @@ func (c *Client) heartbeatLoop() {
 	}
 }
 
-// reconnectLoop 重连监控循环
+// reconnectLoop monitors the connection and retries with exponential backoff on disconnect.
 func (c *Client) reconnectLoop() {
 	cfg := c.cfg.ReconnectCfg
 	delay := cfg.InitialDelay
 
 	for attempt := 1; ; attempt++ {
-		// 等待断开
+		// wait until disconnected
 		for c.connected.Load() {
 			select {
 			case <-c.ctx.Done():
@@ -362,7 +361,7 @@ func (c *Client) reconnectLoop() {
 		default:
 		}
 
-		// 检查最大重试次数
+		// check max retries
 		if cfg.MaxRetries > 0 && attempt > cfg.MaxRetries {
 			common.Error("max retries (%d) reached, giving up", cfg.MaxRetries)
 			c.cancel()
@@ -387,12 +386,12 @@ func (c *Client) reconnectLoop() {
 		}
 
 		common.Info("reconnected successfully")
-		delay = cfg.InitialDelay // 重置延迟
+		delay = cfg.InitialDelay // reset delay on success
 		attempt = 0
 	}
 }
 
-// currentUsername 获取当前用户名
+// currentUsername returns the current OS username.
 func currentUsername() string {
 	if u := os.Getenv("USER"); u != "" {
 		return u
@@ -401,24 +400,4 @@ func currentUsername() string {
 		return u
 	}
 	return "unknown"
-}
-
-// machineModel 获取机器型号
-func machineModel() string {
-	switch runtime.GOOS {
-	case "darwin":
-		if out, err := exec.Command("sysctl", "-n", "hw.model").Output(); err == nil {
-			return strings.TrimSpace(string(out))
-		}
-	case "linux":
-		if data, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err == nil {
-			return strings.TrimSpace(string(data))
-		}
-	case "windows":
-		if out, err := exec.Command("powershell", "-Command",
-			"(Get-WmiObject -Class Win32_ComputerSystem).Model").Output(); err == nil {
-			return strings.TrimSpace(string(out))
-		}
-	}
-	return runtime.GOOS + "/" + runtime.GOARCH
 }
