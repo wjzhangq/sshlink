@@ -20,13 +20,14 @@ import (
 
 // Server 服务端
 type Server struct {
-	listenAddr  string
-	listenPort  int
-	basePort    int
-	publicKey   string
-	maxClients  int
-	maxChannels int
-	healthPort  int
+	listenAddr      string
+	listenPort      int
+	basePort        int
+	publicKey       string
+	privateKeyPath  string
+	maxClients      int
+	maxChannels     int
+	healthPort      int
 
 	clientMgr *ClientManager
 	upgrader  websocket.Upgrader
@@ -52,8 +53,8 @@ type Config struct {
 
 // NewServer 创建服务端
 func NewServer(cfg Config) (*Server, error) {
-	// 读取公钥
-	publicKey, err := readPublicKey(cfg.PublicKeyPath)
+	// 读取公钥，同时推导私钥路径
+	publicKey, privateKeyPath, err := readPublicKey(cfg.PublicKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("read public key error: %w", err)
 	}
@@ -61,13 +62,14 @@ func NewServer(cfg Config) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Server{
-		listenAddr:  cfg.ListenAddr,
-		listenPort:  cfg.ListenPort,
-		basePort:    cfg.BasePort,
-		publicKey:   publicKey,
-		maxClients:  cfg.MaxClients,
-		maxChannels: cfg.MaxChannels,
-		healthPort:  cfg.HealthPort,
+		listenAddr:     cfg.ListenAddr,
+		listenPort:     cfg.ListenPort,
+		basePort:       cfg.BasePort,
+		publicKey:      publicKey,
+		privateKeyPath: privateKeyPath,
+		maxClients:     cfg.MaxClients,
+		maxChannels:    cfg.MaxChannels,
+		healthPort:     cfg.HealthPort,
 		ctx:         ctx,
 		cancel:      cancel,
 		shutdown:    make(chan struct{}),
@@ -253,9 +255,6 @@ func (s *Server) handleClientRegister(ctx context.Context, conn *websocket.Conn,
 	}
 
 	// 添加 SSH 配置
-	homeDir, _ := os.UserHomeDir()
-	identityFile := filepath.Join(homeDir, ".ssh", "id_rsa")
-
 	comment := fmt.Sprintf("user=%s, hostname=%s, ip=%s, remote_port=%d, local_port=%s, connected=%s",
 		info.Username, info.Hostname, info.IP, info.RemotePort, info.SSHPort,
 		info.Connected.Format(time.RFC3339))
@@ -265,7 +264,7 @@ func (s *Server) handleClientRegister(ctx context.Context, conn *websocket.Conn,
 		HostName:     "127.0.0.1",
 		User:         info.Username,
 		Port:         remotePort,
-		IdentityFile: identityFile,
+		IdentityFile: s.privateKeyPath,
 		Comment:      comment,
 	}
 
@@ -315,21 +314,36 @@ func getClientIP(r *http.Request) string {
 	return host
 }
 
-// readPublicKey 读取公钥文件
-func readPublicKey(path string) (string, error) {
+// readPublicKey 读取公钥文件，并验证对应私钥是否存在，返回公钥内容和私钥路径
+func readPublicKey(path string) (string, string, error) {
 	// 展开 ~ 为用户主目录
 	if strings.HasPrefix(path, "~/") {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		path = filepath.Join(homeDir, path[2:])
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+	// 验证公钥文件
+	if _, err := os.Stat(path); err != nil {
+		common.Error("public key not found: %s", path)
+		return "", "", fmt.Errorf("public key not found: %s", path)
+	}
+	common.Info("public key: %s [OK]", path)
+
+	// 验证对应私钥（去掉 .pub 后缀）
+	privateKeyPath := strings.TrimSuffix(path, ".pub")
+	if _, err := os.Stat(privateKeyPath); err != nil {
+		common.Error("private key not found: %s", privateKeyPath)
+	} else {
+		common.Info("private key: %s [OK]", privateKeyPath)
 	}
 
-	return strings.TrimSpace(string(data)), nil
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	return strings.TrimSpace(string(data)), privateKeyPath, nil
 }
