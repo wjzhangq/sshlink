@@ -22,7 +22,8 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: linkc [options] <server-url>\n\n")
-		fmt.Fprintf(os.Stderr, "Example: linkc ws://server:8080\n\n")
+		fmt.Fprintf(os.Stderr, "Example: linkc ws://server:8080\n")
+		fmt.Fprintf(os.Stderr, "         (will connect to ws://server:8080/sshlink/ws)\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 	}
@@ -34,7 +35,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	serverURL := flag.Arg(0)
+	serverURL := flag.Arg(0) + "/sshlink/ws"
 	common.SetVerbose(*verbose)
 
 	// 检查 SSH 服务

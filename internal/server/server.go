@@ -106,7 +106,7 @@ func (s *Server) Start() error {
 
 	// 启动 HTTP 服务
 	addr := fmt.Sprintf("%s:%d", s.listenAddr, s.listenPort)
-	http.HandleFunc("/", s.handleWebSocket)
+	http.HandleFunc("/sshlink/ws", s.handleWebSocket)
 
 	server := &http.Server{
 		Addr: addr,
