@@ -253,26 +253,33 @@ func (c *Client) SendFrame(channelID, signal uint16, data []byte) error {
 // readLoop 读取消息循环
 func (c *Client) readLoop() {
 	defer c.wg.Done()
+	defer c.cancel()
+
+	// ctx 取消时立即中断 ReadMessage
+	go func() {
+		<-c.ctx.Done()
+		c.conn.SetReadDeadline(time.Now())
+	}()
 
 	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
-			c.conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+		c.conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 
-			_, data, err := c.conn.ReadMessage()
-			if err != nil {
+		_, data, err := c.conn.ReadMessage()
+		if err != nil {
+			if c.ctx.Err() == nil {
+				// 非主动关闭，记录错误
 				if websocket.IsUnexpectedCloseError(err,
 					websocket.CloseGoingAway,
 					websocket.CloseAbnormalClosure) {
 					common.Error("client %s websocket error: %v", c.id, err)
+				} else {
+					common.Info("client %s disconnected: %v", c.id, err)
 				}
-				return
 			}
-
-			c.handleMessage(data)
+			return
 		}
+
+		c.handleMessage(data)
 	}
 }
 
@@ -333,6 +340,7 @@ func (c *Client) closeChannel(channelID uint16) {
 // heartbeatLoop 心跳循环
 func (c *Client) heartbeatLoop() {
 	defer c.wg.Done()
+	defer c.cancel()
 
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
