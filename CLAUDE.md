@@ -142,12 +142,20 @@ func (cm *ClientManager) releasePort(port int) {
 clientID := fmt.Sprintf("sshlink%d", remotePort - basePort)
 ```
 
+**稳定序号机制：**
+- 客户端首次注册成功后，将分配到的 clientID 写入可执行文件同级目录的 `.sshlink_id` 文件
+- 再次连接时读取该文件，提取序号作为 `preferred_num` 发送给服务端
+- 服务端优先尝试分配该序号对应的端口（`basePort + preferred_num`）
+- 若端口空闲则直接复用，保持序号不变；若被占用则正常分配新端口并更新缓存
+
 ### 3. 注册信息格式
 
 ```
-客户端 -> 服务端：用户名|主机名|电脑型号|CPU架构|SSH端口
+客户端 -> 服务端：用户名|主机名|电脑型号|CPU架构|SSH端口|preferred_num
 服务端 -> 客户端：客户端ID\n公钥内容
 ```
+
+`preferred_num` 为客户端上次分配到的序号（整数字符串），首次连接时为空。服务端若该序号对应端口空闲则优先分配，否则正常分配新端口。向后兼容：5 字段的旧客户端仍可正常连接。
 
 ### 4. 跨平台 SSH 检查
 

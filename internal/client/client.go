@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -151,7 +153,12 @@ func (c *Client) register(conn *websocket.Conn) error {
 		sshPort = "22"
 	}
 
-	payload := fmt.Sprintf("%s|%s|%s|%s|%s", username, hostname, model, arch, sshPort)
+	preferredStr := ""
+	if n := loadCachedClientNum(); n > 0 {
+		preferredStr = strconv.Itoa(n)
+	}
+
+	payload := fmt.Sprintf("%s|%s|%s|%s|%s|%s", username, hostname, model, arch, sshPort, preferredStr)
 	frame := protocol.EncodeFrame(0, protocol.SIG_REGISTER, []byte(payload))
 
 	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
@@ -183,6 +190,7 @@ func (c *Client) register(conn *websocket.Conn) error {
 	c.clientID = strings.TrimSpace(parts[0])
 	pubKey := strings.TrimSpace(parts[1])
 
+	saveCachedClientID(c.clientID)
 	common.Info("registered as %s", c.clientID)
 
 	// add server public key to authorized_keys
@@ -389,6 +397,34 @@ func (c *Client) reconnectLoop() {
 		delay = cfg.InitialDelay // reset delay on success
 		attempt = 0
 	}
+}
+
+// loadCachedClientNum reads the previously assigned sshlink number from the local cache file.
+// Returns 0 if no valid cache exists.
+func loadCachedClientNum() int {
+	exe, err := os.Executable()
+	if err != nil {
+		return 0
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ".sshlink_id"))
+	if err != nil {
+		return 0
+	}
+	id := strings.TrimPrefix(strings.TrimSpace(string(data)), "sshlink")
+	n, err := strconv.Atoi(id)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// saveCachedClientID writes the assigned clientID to the local cache file.
+func saveCachedClientID(clientID string) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(filepath.Dir(exe), ".sshlink_id"), []byte(clientID), 0600)
 }
 
 // currentUsername returns the current OS username.

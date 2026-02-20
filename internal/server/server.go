@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -188,10 +189,15 @@ func (s *Server) handleClientRegister(ctx context.Context, conn *websocket.Conn,
 		return fmt.Errorf("invalid register message: channelID=%d signal=%d", channelID, signal)
 	}
 
-	// 解析注册信息: 用户名|主机名|电脑型号|CPU架构|SSH端口
+	// 解析注册信息: 用户名|主机名|电脑型号|CPU架构|SSH端口[|preferred_num]
 	parts := strings.Split(string(payload), "|")
-	if len(parts) != 5 {
+	if len(parts) < 5 {
 		return fmt.Errorf("invalid register data: %s", string(payload))
+	}
+
+	preferredNum := 0
+	if len(parts) >= 6 && parts[5] != "" {
+		preferredNum, _ = strconv.Atoi(parts[5])
 	}
 
 	info := ClientInfo{
@@ -204,8 +210,8 @@ func (s *Server) handleClientRegister(ctx context.Context, conn *websocket.Conn,
 		Connected: time.Now(),
 	}
 
-	// 分配端口
-	remotePort, err := s.clientMgr.AllocatePort()
+	// 分配端口（优先使用客户端请求的序号）
+	remotePort, err := s.clientMgr.AllocatePortWithPreference(preferredNum)
 	if err != nil {
 		return fmt.Errorf("allocate port error: %w", err)
 	}

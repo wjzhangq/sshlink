@@ -81,6 +81,31 @@ func NewClientManager(basePort, maxClients, maxChannels int, publicKey string) (
 	}, nil
 }
 
+// AllocatePortWithPreference tries to allocate preferredNum's port first.
+// Falls back to normal allocation if preferredNum <= 0 or the port is taken.
+func (cm *ClientManager) AllocatePortWithPreference(preferredNum int) (int, error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if preferredNum > 0 {
+		preferredPort := cm.basePort + preferredNum
+		if preferredPort > 0 && preferredPort < 65535 && !cm.allocatedPorts[preferredPort] {
+			cm.allocatedPorts[preferredPort] = true
+			return preferredPort, nil
+		}
+	}
+
+	for port := cm.nextAvailablePort; port < 65535; port++ {
+		if !cm.allocatedPorts[port] {
+			cm.allocatedPorts[port] = true
+			cm.nextAvailablePort = port + 1
+			return port, nil
+		}
+	}
+
+	return 0, ErrNoAvailablePort
+}
+
 // AllocatePort 分配可用端口（使用游标避免每次从头扫描）
 func (cm *ClientManager) AllocatePort() (int, error) {
 	cm.mu.Lock()
