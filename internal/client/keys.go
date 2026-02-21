@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -57,7 +58,12 @@ func AddAuthorizedKey(pubKey string) error {
 func authorizedKeysPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("get home dir error: %w", err)
+		// fallback for systemd services where $HOME is not set
+		u, uerr := user.Current()
+		if uerr != nil {
+			return "", fmt.Errorf("get home dir error: %w", err)
+		}
+		homeDir = u.HomeDir
 	}
 	return filepath.Join(homeDir, ".ssh", "authorized_keys"), nil
 }
