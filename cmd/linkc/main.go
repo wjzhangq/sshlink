@@ -12,6 +12,7 @@ import (
 	"github.com/wjzhangq/sshlink/internal/common"
 )
 
+// 使用: go build -ldflags "-X main.defaultServerURL=ws://your-server:8080"
 func main() {
 	hostname := flag.String("h", "", "custom hostname (default: system hostname)")
 	sshPort := flag.String("ssh-port", "22", "local SSH port")
