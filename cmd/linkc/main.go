@@ -12,7 +12,10 @@ import (
 	"github.com/wjzhangq/sshlink/internal/common"
 )
 
+// 编译时注入的默认服务器地址
 // 使用: go build -ldflags "-X main.defaultServerURL=ws://your-server:8080"
+var defaultServerURL string
+
 func main() {
 	hostname := flag.String("h", "", "custom hostname (default: system hostname)")
 	sshPort := flag.String("ssh-port", "22", "local SSH port")
@@ -22,7 +25,12 @@ func main() {
 	verbose := flag.Bool("v", false, "verbose logging")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: linkc [options] <server-url>\n\n")
+		if defaultServerURL != "" {
+			fmt.Fprintf(os.Stderr, "Usage: linkc [options] [server-url]\n\n")
+			fmt.Fprintf(os.Stderr, "Default server: %s\n\n", defaultServerURL)
+		} else {
+			fmt.Fprintf(os.Stderr, "Usage: linkc [options] <server-url>\n\n")
+		}
 		fmt.Fprintf(os.Stderr, "Example: linkc ws://server:8080\n")
 		fmt.Fprintf(os.Stderr, "         (will connect to ws://server:8080/sshlink/ws)\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
@@ -31,12 +39,15 @@ func main() {
 
 	flag.Parse()
 
-	if flag.NArg() < 1 {
+	var serverURL string
+	if flag.NArg() >= 1 {
+		serverURL = flag.Arg(0) + "/sshlink/ws"
+	} else if defaultServerURL != "" {
+		serverURL = defaultServerURL + "/sshlink/ws"
+	} else {
 		flag.Usage()
 		os.Exit(1)
 	}
-
-	serverURL := flag.Arg(0) + "/sshlink/ws"
 	common.SetVerbose(*verbose)
 
 	// check SSH service
