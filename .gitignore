@@ -1,1 +1,3 @@
 .claude
+dist
+build_linkc.sh
