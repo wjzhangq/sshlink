@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -429,6 +430,15 @@ func saveCachedClientID(clientID string) {
 
 // currentUsername returns the current OS username.
 func currentUsername() string {
+	// 1. 优先使用 os/user 包
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	// 2. 通过 UID 查找
+	if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil && u.Username != "" {
+		return u.Username
+	}
+	// 3. 环境变量回退
 	if u := os.Getenv("USER"); u != "" {
 		return u
 	}

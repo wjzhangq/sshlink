@@ -57,13 +57,15 @@ func AddAuthorizedKey(pubKey string) error {
 
 func authorizedKeysPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
-	if err != nil {
+	if err != nil || homeDir == "" {
 		// fallback for systemd services where $HOME is not set
-		u, uerr := user.Current()
-		if uerr != nil {
+		if u, uerr := user.Current(); uerr == nil && u.HomeDir != "" {
+			homeDir = u.HomeDir
+		} else if u, uerr := user.LookupId(fmt.Sprintf("%d", os.Getuid())); uerr == nil && u.HomeDir != "" {
+			homeDir = u.HomeDir
+		} else {
 			return "", fmt.Errorf("get home dir error: %w", err)
 		}
-		homeDir = u.HomeDir
 	}
 	return filepath.Join(homeDir, ".ssh", "authorized_keys"), nil
 }
